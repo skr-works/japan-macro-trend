@@ -58,7 +58,7 @@ def get_market_data():
     """Yahoo Financeからデータ取得＆整形"""
     print("Fetching market data...")
     end_date = datetime.datetime.now()
-    start_date = end_date - datetime.timedelta(days=500) # トレンド判定用に長めに取得
+    start_date = end_date - datetime.timedelta(days=550) # トレンド判定用に十分長めに取得
 
     # データ取得
     raw_df = yf.download(list(TICKERS.values()), start=start_date, end=end_date, progress=False)['Close']
@@ -84,7 +84,6 @@ def analyze_trends(raw_df):
     
     # 過去データが十分にあるか確認
     if target_date < raw_df.index[0]:
-        # データ不足の場合は一番古いデータを使用
         idx_365 = 0
     else:
         idx_365 = raw_df.index.get_indexer([target_date], method='nearest')[0]
@@ -185,10 +184,12 @@ def diagnose_economy(trends):
     return {"level": "other", "name": "トレンド交錯", "desc": "明確なパターンに当てはまりません。個別の動きを注視してください。"}
 
 def generate_html(raw_df, trends, ratios, current_data, diagnosis):
-    """WordPress投稿用のHTML生成 (h3/h4使用)"""
+    """WordPress投稿用のHTML生成"""
     
-    # --- チャートデータ作成 (365日分, 起点=100) ---
-    chart_df = raw_df.tail(365).copy()
+    # --- チャートデータ作成 (正確に過去365日分) ---
+    # 修正: tail(365)だと営業日ベースで1.5年分になるため、日付でフィルタリングする
+    target_date = raw_df.index[-1] - datetime.timedelta(days=365)
+    chart_df = raw_df[raw_df.index >= target_date].copy()
     
     # 最初の行を100として正規化 (ゼロ除算回避)
     first_row = chart_df.iloc[0].replace(0, 1) 
@@ -292,7 +293,7 @@ def generate_html(raw_df, trends, ratios, current_data, diagnosis):
         </div>
 
         <details style="margin-bottom: 40px; background: #fafafa; border: 1px solid #eee; border-radius: 6px;">
-            <summary style="padding: 15px; cursor: pointer; font-weight: bold; outline: none; color: #555;">▶景気判定ロジックの解説 (クリックで開閉)</summary>
+            <summary style="padding: 15px; cursor: pointer; font-weight: bold; outline: none; color: #555;">🧐 景気判定ロジックの解説 (クリックで開閉)</summary>
             <div style="padding: 0 20px 20px 20px; font-size: 0.9rem; line-height: 1.7; border-top: 1px solid #eee;">
                 <p>現在値と365日前を比較し、以下の優先順位で自動判定しています。</p>
                 
