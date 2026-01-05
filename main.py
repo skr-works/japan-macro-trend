@@ -12,7 +12,7 @@ TICKERS = {
     "Copper": "HG=F",      # [稼ぎ] 銅
     "JGB_ETF": "1475.T",   # [信用] 日本国債
     "Oil": "BZ=F",         # [製造業コスト] 原油
-    "Nasdaq": "QQQ",       # [ITコスト] ナスダックETF (データ安定のため^NDXから変更)
+    "Nasdaq": "QQQ",       # [ITコスト] ナスダックETF
     "USDJPY": "JPY=X",     # [換算] ドル円
     "US_Rate": "^TNX"      # [圧力] 米金利
 }
@@ -22,7 +22,7 @@ LABELS = {
     "Copper": "銅 (輸出需要)",
     "JGB_ETF": "日本国債ETF",
     "Oil": "原油 (製造コスト)",
-    "Nasdaq": "ナスダック (IT小作)",
+    "Nasdaq": "ナスダック (ITコスト)",
     "USDJPY": "ドル円",
     "US_Rate": "米10年債金利"
 }
@@ -187,11 +187,10 @@ def generate_html(raw_df, trends, ratios, current_data, diagnosis):
     """WordPress投稿用のHTML生成"""
     
     # --- チャートデータ作成 (正確に過去365日分) ---
-    # 修正: tail(365)だと営業日ベースで1.5年分になるため、日付でフィルタリングする
     target_date = raw_df.index[-1] - datetime.timedelta(days=365)
     chart_df = raw_df[raw_df.index >= target_date].copy()
     
-    # 最初の行を100として正規化 (ゼロ除算回避)
+    # 最初の行を100として正規化
     first_row = chart_df.iloc[0].replace(0, 1) 
     normalized_df = chart_df.div(first_row).mul(100).round(2)
     
@@ -210,7 +209,6 @@ def generate_html(raw_df, trends, ratios, current_data, diagnosis):
     # Chart.js Dataset作成
     datasets = []
     for label_jp, data_list in plot_data.items():
-        # 逆引きでキーを取得して色を決定
         key_code = [k for k, v in LABELS.items() if v == label_jp][0]
         color = COLORS.get(key_code, "#333")
         
@@ -241,8 +239,6 @@ def generate_html(raw_df, trends, ratios, current_data, diagnosis):
     st = style_map.get(diagnosis['level'], style_map["other"])
 
     # --- HTML構築 ---
-    last_update = get_jst_now().strftime('%Y-%m-%d %H:%M')
-    
     html = f"""
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; max-width: 800px; margin: 0 auto; color: #333;">
 
@@ -257,8 +253,6 @@ def generate_html(raw_df, trends, ratios, current_data, diagnosis):
     """
 
     icons = {"UP": "📈", "FLAT": "➡️", "DOWN": "📉"}
-    
-    # 表示順序
     display_keys = ["Copper", "JGB_ETF", "Oil", "Nasdaq", "USDJPY", "US_Rate"]
     
     for key in display_keys:
@@ -267,14 +261,12 @@ def generate_html(raw_df, trends, ratios, current_data, diagnosis):
         label = LABELS[key]
         icon = icons[trend]
         
-        # 数値フォーマット
         if TICKERS[key] in current_data:
             raw_val = current_data[TICKERS[key]]
             fmt_val = f"{raw_val:,.0f}" if key == "JGB_ETF" else f"{raw_val:,.2f}"
         else:
             fmt_val = "-"
 
-        # トレンド色
         t_color = "#333"
         if trend == "UP": t_color = "#d32f2f"
         elif trend == "DOWN": t_color = "#1976d2"
@@ -293,27 +285,73 @@ def generate_html(raw_df, trends, ratios, current_data, diagnosis):
 
         <details style="margin-bottom: 40px; background: #fafafa; border: 1px solid #eee; border-radius: 6px;">
             <summary style="padding: 15px; cursor: pointer; font-weight: bold; outline: none; color: #555;">景気判定ロジックの解説 (クリックで開閉)</summary>
-            <div style="padding: 0 20px 20px 20px; font-size: 0.9rem; line-height: 1.7; border-top: 1px solid #eee;">
-                <p>現在値と365日前を比較し、以下の優先順位で自動判定しています。</p>
+            <div style="padding: 0 20px 20px 20px; font-size: 0.9rem; line-height: 1.8; border-top: 1px solid #eee;">
+                <p style="margin-bottom: 20px;">現在値と365日前を比較し、各指標の組み合わせから経済状態を自動判定しています。</p>
                 
-                <h5 style="margin: 15px 0 5px 0; color: #d32f2f; font-size: 0.95rem;">Priority 1: クライシス・危険</h5>
-                <ul style="margin: 0; padding-left: 20px;">
-                    <li><strong>日本売り:</strong> 国債下落 ＋ 円安</li>
-                    <li><strong>スタグフレーション:</strong> 銅(需要)下落 ＋ 輸入コスト(原油/IT)増</li>
-                </ul>
+                <h5 style="margin: 20px 0 10px 0; border-left: 4px solid #d32f2f; padding-left: 10px; color: #333;">🔴 危険領域 (クライシス)</h5>
+                <div style="margin-bottom: 15px;">
+                    <strong style="color: #d32f2f;">日本売り (トリプル安)</strong><br>
+                    <span style="font-size: 0.8rem; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px;">国債下落</span> ＋ <span style="font-size: 0.8rem; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px;">円安</span><br>
+                    国債が売られて金利が急騰する中で、通貨安（円安）も止まらない状態です。国家財政への信認が揺らぎ、資金が日本から逃避している危険なサインです。
+                </div>
+                <div>
+                    <strong style="color: #e65100;">スタグフレーション</strong><br>
+                    <span style="font-size: 0.8rem; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px;">銅(景気)下落</span> ＋ <span style="font-size: 0.8rem; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px;">コスト増</span><br>
+                    「景気の体温計」である銅価格が下落し需要が冷え込む一方で、原油やITなどの輸入コストが上昇中。不景気なのに物価が上がる、生活が最も苦しい局面です。
+                </div>
 
-                <h5 style="margin: 15px 0 5px 0; color: #f57f17; font-size: 0.95rem;">Priority 2: 構造的課題・警戒</h5>
-                <ul style="margin: 0; padding-left: 20px;">
-                    <li><strong>デジタル赤字貧乏:</strong> 輸出横ばい ＋ ナスダック高 ＋ 円安</li>
-                    <li><strong>利益なき繁忙:</strong> 輸出増 ＋ コスト増 ＋ 円安</li>
-                    <li><strong>米独り勝ち:</strong> 米金利高 ＋ ナスダック高 ＋ 円安</li>
-                </ul>
+                <h5 style="margin: 25px 0 10px 0; border-left: 4px solid #f57f17; padding-left: 10px; color: #333;">🟠 警戒領域 (構造的課題)</h5>
+                <div style="margin-bottom: 15px;">
+                    <strong style="color: #f57f17;">デジタル赤字貧乏</strong><br>
+                    <span style="font-size: 0.8rem; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px;">輸出横ばい</span> ＋ <span style="font-size: 0.8rem; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px;">ITコスト増</span> ＋ <span style="font-size: 0.8rem; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px;">円安</span><br>
+                    日本の輸出（稼ぐ力）は伸び悩んでいるのに、海外へのITサービス支払い（デジタル赤字）と円安によって、国富が一方的に流出している状態です。
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <strong style="color: #f57f17;">利益なき繁忙 (コストプッシュ)</strong><br>
+                    <span style="font-size: 0.8rem; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px;">輸出増</span> ＋ <span style="font-size: 0.8rem; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px;">コスト増</span> ＋ <span style="font-size: 0.8rem; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px;">円安</span><br>
+                    輸出数量は伸びていますが、それ以上に資源高や円安による輸入コスト増が激しく、売上はあっても利益が残りにくい「忙しいだけ」の状態です。
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <strong style="color: #f57f17;">米独り勝ち</strong><br>
+                    <span style="font-size: 0.8rem; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px;">米金利高</span> ＋ <span style="font-size: 0.8rem; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px;">米株高</span><br>
+                    米国の金利高と株高が両立しており、世界の資金が米国に吸い寄せられています。日本からは円安を通じて資金が流出しやすい局面です。
+                </div>
+                 <div>
+                    <strong style="color: #f57f17;">供給ショック・資源インフレ</strong><br>
+                    <span style="font-size: 0.8rem; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px;">銅(景気)下落</span> ＋ <span style="font-size: 0.8rem; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px;">原油高</span><br>
+                    需要不足（不況）にもかかわらず、地政学リスクなどで原油価格だけが高騰。コストプッシュ型の悪いインフレ圧力が発生しています。
+                </div>
 
-                <h5 style="margin: 15px 0 5px 0; color: #2e7d32; font-size: 0.95rem;">Priority 3: 健全な成長</h5>
-                <ul style="margin: 0; padding-left: 20px;">
-                    <li><strong>黄金期:</strong> 銅上昇 ＋ コスト(原油/IT)安定</li>
-                    <li><strong>昭和型ブーム:</strong> 銅上昇 ＋ 円安 (輸出ボーナス)</li>
-                </ul>
+                <h5 style="margin: 25px 0 10px 0; border-left: 4px solid #2e7d32; padding-left: 10px; color: #333;">🟢 成長領域 (好循環)</h5>
+                <div style="margin-bottom: 15px;">
+                    <strong style="color: #2e7d32;">黄金期 (高次元バランス)</strong><br>
+                    <span style="font-size: 0.8rem; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px;">銅(景気)上昇</span> ＋ <span style="font-size: 0.8rem; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px;">コスト安定</span><br>
+                    世界景気の拡大で輸出が伸びる一方、輸入コストは安定。交易条件が改善し、日本企業が最も利益を上げやすく給料アップにも繋がりやすい理想的な環境です。
+                </div>
+                <div>
+                    <strong style="color: #2e7d32;">昭和型ブーム (輸出ボーナス)</strong><br>
+                    <span style="font-size: 0.8rem; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px;">銅(景気)上昇</span> ＋ <span style="font-size: 0.8rem; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px;">円安</span><br>
+                    世界的な需要増と円安が重なり、輸出企業の業績が爆発的に伸びるパターン。高度経済成長期のような輸出主導の好景気です。
+                </div>
+
+                <h5 style="margin: 25px 0 10px 0; border-left: 4px solid #1976d2; padding-left: 10px; color: #333;">🔵 停滞・不況</h5>
+                <div style="margin-bottom: 15px;">
+                    <strong style="color: #0d47a1;">円高不況</strong><br>
+                    <span style="font-size: 0.8rem; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px;">銅(景気)下落</span> ＋ <span style="font-size: 0.8rem; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px;">円高</span><br>
+                    世界不況に加え、円高によって輸出競争力が低下。製造業を中心に業績が悪化し、デフレ圧力が強まる不況局面です。
+                </div>
+                <div>
+                    <strong style="color: #0d47a1;">世界同時不況</strong><br>
+                    <span style="font-size: 0.8rem; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px;">全指標下落</span><br>
+                    需要（銅）、エネルギー（原油）、IT株価がすべて下落。世界経済全体が収縮しており、日本もその波に飲み込まれている状態です。
+                </div>
+
+                <h5 style="margin: 25px 0 10px 0; border-left: 4px solid #757575; padding-left: 10px; color: #333;">⚪ その他</h5>
+                <div>
+                    <strong style="color: #616161;">トレンド交錯・過渡期</strong><br>
+                    <span style="font-size: 0.8rem; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px;">パターン合致なし</span><br>
+                    主要指標の方向性がバラバラで、明確なトレンドが出ていません。市場の迷い、あるいはトレンドの転換点（過渡期）にある可能性が高い状態です。
+                </div>
             </div>
         </details>
 
