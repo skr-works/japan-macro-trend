@@ -245,7 +245,6 @@ def generate_html(raw_df, trends, ratios, current_data, diagnosis):
     
     html = f"""
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; max-width: 800px; margin: 0 auto; color: #333;">
-        <p style="text-align: right; font-size: 0.8rem; color: #888;">Data Updated: {last_update} (JST)</p>
 
         <div style="background: {st['bg']}; border-left: 6px solid {st['border']}; padding: 20px; border-radius: 4px; margin-bottom: 30px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
             <div style="font-size: 0.85rem; color: {st['text']}; font-weight: bold; margin-bottom: 5px;">現在の日本経済フェーズ</div>
