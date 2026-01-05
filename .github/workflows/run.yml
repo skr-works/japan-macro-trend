@@ -1,0 +1,32 @@
+name: Data Pipeline Execution
+
+on:
+  schedule:
+    # JST 08:30 (UTC 23:30 previous day) - Mon to Fri (UTC Sun to Thu)
+    - cron: '30 23 * * 0-4'
+    # JST 15:45 (UTC 06:45) - Mon to Fri
+    - cron: '45 6 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  process_data:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+
+    - name: Run Pipeline
+      env:
+        # 難読化された認証情報を渡す
+        DATA_PIPELINE_CREDENTIALS: ${{ secrets.DATA_PIPELINE_CREDENTIALS }}
+      run: python main.py
