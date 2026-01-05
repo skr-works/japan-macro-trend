@@ -293,7 +293,7 @@ def generate_html(raw_df, trends, ratios, current_data, diagnosis):
         </div>
 
         <details style="margin-bottom: 40px; background: #fafafa; border: 1px solid #eee; border-radius: 6px;">
-            <summary style="padding: 15px; cursor: pointer; font-weight: bold; outline: none; color: #555;">🧐 景気判定ロジックの解説 (クリックで開閉)</summary>
+            <summary style="padding: 15px; cursor: pointer; font-weight: bold; outline: none; color: #555;">景気判定ロジックの解説 (クリックで開閉)</summary>
             <div style="padding: 0 20px 20px 20px; font-size: 0.9rem; line-height: 1.7; border-top: 1px solid #eee;">
                 <p>現在値と365日前を比較し、以下の優先順位で自動判定しています。</p>
                 
