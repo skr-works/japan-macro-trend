@@ -12,7 +12,7 @@ TICKERS = {
     "Copper": "HG=F",      # [稼ぎ] 銅
     "JGB_ETF": "1475.T",   # [信用] 日本国債
     "Oil": "BZ=F",         # [製造業コスト] 原油
-    "Nasdaq": "^NDX",      # [ITコスト] ナスダック
+    "Nasdaq": "QQQ",       # [ITコスト] ナスダックETF (データ安定のため^NDXから変更)
     "USDJPY": "JPY=X",     # [換算] ドル円
     "US_Rate": "^TNX"      # [圧力] 米金利
 }
@@ -69,8 +69,9 @@ def get_market_data():
     
     # 欠損値補完 (Fill Forward)
     raw_df = raw_df.fillna(method='ffill')
-    
-    # 掛け算指標(Cost_Index)は廃止
+
+    # 【重要】全ての列がNaNの行（休日やデータ取得直後の空行）を削除
+    raw_df = raw_df.dropna(how='all')
     
     return raw_df
 
@@ -80,7 +81,14 @@ def analyze_trends(raw_df):
     
     # 365日前の近似データを探す
     target_date = raw_df.index[-1] - datetime.timedelta(days=365)
-    idx_365 = raw_df.index.get_indexer([target_date], method='nearest')[0]
+    
+    # 過去データが十分にあるか確認
+    if target_date < raw_df.index[0]:
+        # データ不足の場合は一番古いデータを使用
+        idx_365 = 0
+    else:
+        idx_365 = raw_df.index.get_indexer([target_date], method='nearest')[0]
+        
     old_data = raw_df.iloc[idx_365]
 
     trends = {}
@@ -90,11 +98,19 @@ def analyze_trends(raw_df):
     for key, ticker in TICKERS.items():
         col_name = ticker
         
+        # データが存在しない場合のガード
+        if col_name not in current_data or pd.isna(current_data[col_name]):
+            ratios[key] = 1.0
+            trends[key] = "FLAT"
+            continue
+
         val_now = current_data[col_name]
         val_old = old_data[col_name]
         
-        if val_old == 0: ratio = 1.0
-        else: ratio = val_now / val_old
+        if val_old == 0 or pd.isna(val_old): 
+            ratio = 1.0
+        else: 
+            ratio = val_now / val_old
         
         ratios[key] = ratio
         
@@ -169,11 +185,14 @@ def diagnose_economy(trends):
     return {"level": "other", "name": "トレンド交錯", "desc": "明確なパターンに当てはまりません。個別の動きを注視してください。"}
 
 def generate_html(raw_df, trends, ratios, current_data, diagnosis):
-    """WordPress投稿用のHTML生成 (h2廃止、h3/h4使用)"""
+    """WordPress投稿用のHTML生成 (h3/h4使用)"""
     
     # --- チャートデータ作成 (365日分, 起点=100) ---
     chart_df = raw_df.tail(365).copy()
-    normalized_df = chart_df.div(chart_df.iloc[0]).mul(100).round(2)
+    
+    # 最初の行を100として正規化 (ゼロ除算回避)
+    first_row = chart_df.iloc[0].replace(0, 1) 
+    normalized_df = chart_df.div(first_row).mul(100).round(2)
     
     # 必要な列を日本語ラベルに変換
     plot_data = {}
@@ -181,8 +200,9 @@ def generate_html(raw_df, trends, ratios, current_data, diagnosis):
     
     for key in display_keys:
         col_key = TICKERS[key]
-        series = normalized_df[col_key].fillna(method='ffill')
-        plot_data[LABELS[key]] = series.tolist()
+        if col_key in normalized_df:
+            series = normalized_df[col_key].fillna(method='ffill')
+            plot_data[LABELS[key]] = series.tolist()
 
     chart_labels = normalized_df.index.strftime('%Y/%m/%d').tolist()
     
@@ -219,7 +239,7 @@ def generate_html(raw_df, trends, ratios, current_data, diagnosis):
     }
     st = style_map.get(diagnosis['level'], style_map["other"])
 
-    # --- HTML構築 (h2 -> h3, h3 -> h4) ---
+    # --- HTML構築 ---
     last_update = get_jst_now().strftime('%Y-%m-%d %H:%M')
     
     html = f"""
@@ -248,8 +268,11 @@ def generate_html(raw_df, trends, ratios, current_data, diagnosis):
         icon = icons[trend]
         
         # 数値フォーマット
-        raw_val = current_data[TICKERS[key]]
-        fmt_val = f"{raw_val:,.0f}" if key == "JGB_ETF" else f"{raw_val:,.2f}"
+        if TICKERS[key] in current_data:
+            raw_val = current_data[TICKERS[key]]
+            fmt_val = f"{raw_val:,.0f}" if key == "JGB_ETF" else f"{raw_val:,.2f}"
+        else:
+            fmt_val = "-"
 
         # トレンド色
         t_color = "#333"
@@ -388,7 +411,6 @@ def push_to_pipeline(content):
             print("Data push successful.")
         else:
             print(f"Data push failed: {res.status_code}")
-            # セキュリティのためレスポンス詳細はログに出さない
     except Exception as e:
         print(f"Connection error: {e}")
 
