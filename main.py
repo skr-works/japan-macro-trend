@@ -11,8 +11,8 @@ import jpholiday
 TICKERS = {
     "Copper": "HG=F",      # [稼ぎ] 銅
     "JGB_ETF": "1475.T",   # [信用] 日本国債
-    "Oil": "BZ=F",         # [物理コスト] 原油
-    "Nasdaq": "^NDX",      # [デジタルコスト] ナスダック
+    "Oil": "BZ=F",         # [製造業コスト] 原油
+    "Nasdaq": "^NDX",      # [ITコスト] ナスダック
     "USDJPY": "JPY=X",     # [換算] ドル円
     "US_Rate": "^TNX"      # [圧力] 米金利
 }
@@ -21,22 +21,20 @@ TICKERS = {
 LABELS = {
     "Copper": "銅 (輸出需要)",
     "JGB_ETF": "日本国債ETF",
-    "Cost_Index": "輸入コスト指数 (原油×IT)",
+    "Oil": "原油 (製造コスト)",
+    "Nasdaq": "ナスダック (IT小作)",
     "USDJPY": "ドル円",
-    "US_Rate": "米10年債金利",
-    "Oil": "原油",
-    "Nasdaq": "ナスダック"
+    "US_Rate": "米10年債金利"
 }
 
 # チャート・アイコン用カラー
 COLORS = {
     "Copper": "#ff7f0e",     # オレンジ
     "JGB_ETF": "#9467bd",    # 紫
-    "Cost_Index": "#d62728", # 赤
+    "Oil": "#8c564b",        # 茶
+    "Nasdaq": "#17becf",     # 水色
     "USDJPY": "#2ca02c",     # 緑
-    "US_Rate": "#7f7f7f",    # グレー
-    "Oil": "#8c564b",        # 茶 (補助)
-    "Nasdaq": "#17becf"      # 水色 (補助)
+    "US_Rate": "#7f7f7f"     # グレー
 }
 
 def get_jst_now():
@@ -72,8 +70,7 @@ def get_market_data():
     # 欠損値補完 (Fill Forward)
     raw_df = raw_df.fillna(method='ffill')
     
-    # 輸入コスト指数 (Cost Index) の計算: 原油 * ナスダック
-    raw_df['Cost_Index'] = raw_df[TICKERS['Oil']] * raw_df[TICKERS['Nasdaq']]
+    # 掛け算指標(Cost_Index)は廃止
     
     return raw_df
 
@@ -89,21 +86,14 @@ def analyze_trends(raw_df):
     trends = {}
     ratios = {}
     
-    # 判定対象のキー（TICKERSのキー + Cost_Index）
-    # ※原油とナスダック単体はCost_Indexに含まれるため判定の主役ではないが、比率は計算しておく
-    check_keys = list(TICKERS.keys()) + ['Cost_Index']
-    
-    # Tickerマップ（内部キー -> Tickerシンボル）
-    ticker_map = TICKERS.copy()
-    ticker_map['Cost_Index'] = 'Cost_Index' # 計算済み列
-
-    for key in check_keys:
-        col_name = ticker_map[key]
+    # 全てのTickerを判定対象とする
+    for key, ticker in TICKERS.items():
+        col_name = ticker
         
         val_now = current_data[col_name]
         val_old = old_data[col_name]
         
-        if val_old == 0: ratio = 1.0 # ゼロ除算回避
+        if val_old == 0: ratio = 1.0
         else: ratio = val_now / val_old
         
         ratios[key] = ratio
@@ -119,38 +109,50 @@ def analyze_trends(raw_df):
     return trends, ratios, current_data
 
 def diagnose_economy(trends):
-    """10パターンの景気判定ロジック"""
+    """10パターンの景気判定ロジック (原油とNasdaqを分離版)"""
     
     # 変数ショートカット
     cop = trends["Copper"]
     jgb = trends["JGB_ETF"]
-    cost = trends["Cost_Index"]
+    oil = trends["Oil"]
+    nas = trends["Nasdaq"]
     uj = trends["USDJPY"]
     rate = trends["US_Rate"]
+
+    # コスト高判定（どちらか一方でも上がっていればコスト増圧力ありとみなす）
+    is_cost_up = (oil == "UP" or nas == "UP")
+    # コスト安判定（両方とも下がっている、あるいは安定）
+    is_cost_down_or_flat = (oil != "UP" and nas != "UP")
 
     # --- Priority 1: クライシス判定 ---
     if jgb == "DOWN" and uj == "UP":
         return {"level": "critical", "name": "日本売り (トリプル安)", "desc": "国債価格の急落(金利急騰)と円安が連鎖しています。財政への信認低下リスクがある危険な状態です。"}
     
-    if cop == "DOWN" and cost == "UP":
-        return {"level": "danger", "name": "スタグフレーション", "desc": "不況下の物価高。稼ぐ力(輸出需要)が落ちているのに、輸入コストだけが上昇している最悪の経済状態です。"}
+    if cop == "DOWN" and is_cost_up:
+        return {"level": "danger", "name": "スタグフレーション", "desc": "不況下の物価高。稼ぐ力(輸出需要)が落ちているのに、輸入コスト(原油またはIT)が上昇している最悪の経済状態です。"}
 
     # --- Priority 2: 悪いインフレ・構造的搾取 ---
-    if cop == "FLAT" and cost == "UP" and uj == "UP":
-        return {"level": "warning", "name": "デジタル赤字貧乏", "desc": "輸出は横ばいですが、ITコスト増(デジタル赤字)と円安のダブルパンチで国富が流出しています。"}
+    # デジタル赤字貧乏: Nasdaqの上昇を条件にする
+    if cop == "FLAT" and nas == "UP" and uj == "UP":
+        return {"level": "warning", "name": "デジタル赤字貧乏", "desc": "輸出は横ばいですが、ITコスト増(ナスダック高)と円安のダブルパンチで国富が流出しています。"}
     
-    if cop == "UP" and cost == "UP" and uj == "UP":
-        return {"level": "warning", "name": "利益なき繁忙 (コストプッシュ)", "desc": "売上は立っていますが、仕入れコスト増と行き過ぎた円安で利益が圧迫されています。"}
+    # 利益なき繁忙: 原油またはNasdaqの上昇
+    if cop == "UP" and is_cost_up and uj == "UP":
+        cost_factor = "IT" if nas == "UP" else "資源"
+        if nas == "UP" and oil == "UP": cost_factor = "資源とIT"
+        return {"level": "warning", "name": "利益なき繁忙 (コストプッシュ)", "desc": f"売上は立っていますが、仕入れコスト({cost_factor})増と行き過ぎた円安で利益が圧迫されています。"}
     
-    if cop == "DOWN" and cost == "UP":
-        return {"level": "warning", "name": "供給ショック・資源インフレ", "desc": "世界需要は弱いですが、戦争や供給制約などでコスト高になっています。"}
+    # 供給ショック: 主に原油高
+    if cop == "DOWN" and oil == "UP":
+        return {"level": "warning", "name": "供給ショック・資源インフレ", "desc": "世界需要は弱いですが、戦争や供給制約などで原油価格が高騰しています。"}
     
-    if rate == "UP" and cost == "UP" and uj == "UP":
-        return {"level": "warning", "name": "米独り勝ち (日米格差)", "desc": "米国金利と米国株(コスト)だけが高く、資金が米国へ吸い上げられている状態です。"}
+    # 米独り勝ち: Nasdaq高(株高)と金利高
+    if rate == "UP" and nas == "UP" and uj == "UP":
+        return {"level": "warning", "name": "米独り勝ち (日米格差)", "desc": "米国金利と米国株だけが高く、資金が米国へ吸い上げられている状態です。"}
 
     # --- Priority 3: 良いインフレ・健全な成長 ---
-    if cop == "UP" and (cost == "FLAT" or cost == "DOWN"):
-        return {"level": "safe", "name": "黄金期 (高次元バランス)", "desc": "輸出需要が強く、かつ輸入コストは落ち着いています。交易条件が改善する理想的な好況です。"}
+    if cop == "UP" and is_cost_down_or_flat:
+        return {"level": "safe", "name": "黄金期 (高次元バランス)", "desc": "輸出需要が強く、かつ輸入コスト(原油・IT)は落ち着いています。交易条件が改善する理想的な好況です。"}
     
     if cop == "UP" and uj == "UP":
         return {"level": "safe", "name": "昭和型ブーム (輸出ボーナス)", "desc": "円安と輸出増が噛み合い、輸出企業が利益を最大化する伝統的な勝ちパターンです。"}
@@ -159,14 +161,15 @@ def diagnose_economy(trends):
     if cop == "DOWN" and uj == "DOWN":
         return {"level": "stagnation", "name": "円高不況", "desc": "急激な円高により、輸出産業の競争力が削がれ、業績が悪化しています。"}
     
-    if cop == "DOWN" and cost == "DOWN":
-        return {"level": "stagnation", "name": "世界同時不況 (デフレ回帰)", "desc": "需要もコストも縮小中。世界的なリセッションにより、経済活動が停滞しています。"}
+    # 世界同時不況: 全部下がり
+    if cop == "DOWN" and oil == "DOWN" and nas == "DOWN":
+        return {"level": "stagnation", "name": "世界同時不況 (デフレ回帰)", "desc": "需要も、資源価格も、IT株価も縮小中。世界的なリセッションにより経済活動が停滞しています。"}
 
     # --- その他 ---
     return {"level": "other", "name": "トレンド交錯", "desc": "明確なパターンに当てはまりません。個別の動きを注視してください。"}
 
 def generate_html(raw_df, trends, ratios, current_data, diagnosis):
-    """WordPress投稿用のHTML生成 (Chart.js含む)"""
+    """WordPress投稿用のHTML生成 (h2廃止、h3/h4使用)"""
     
     # --- チャートデータ作成 (365日分, 起点=100) ---
     chart_df = raw_df.tail(365).copy()
@@ -174,10 +177,10 @@ def generate_html(raw_df, trends, ratios, current_data, diagnosis):
     
     # 必要な列を日本語ラベルに変換
     plot_data = {}
-    display_keys = ["Copper", "JGB_ETF", "Cost_Index", "USDJPY", "US_Rate"]
+    display_keys = ["Copper", "JGB_ETF", "Oil", "Nasdaq", "USDJPY", "US_Rate"]
     
     for key in display_keys:
-        col_key = TICKERS.get(key, key) # Cost_Indexはそのまま
+        col_key = TICKERS[key]
         series = normalized_df[col_key].fillna(method='ffill')
         plot_data[LABELS[key]] = series.tolist()
 
@@ -216,7 +219,7 @@ def generate_html(raw_df, trends, ratios, current_data, diagnosis):
     }
     st = style_map.get(diagnosis['level'], style_map["other"])
 
-    # --- HTML構築 ---
+    # --- HTML構築 (h2 -> h3, h3 -> h4) ---
     last_update = get_jst_now().strftime('%Y-%m-%d %H:%M')
     
     html = f"""
@@ -224,16 +227,19 @@ def generate_html(raw_df, trends, ratios, current_data, diagnosis):
         <p style="text-align: right; font-size: 0.8rem; color: #888;">Data Updated: {last_update} (JST)</p>
 
         <div style="background: {st['bg']}; border-left: 6px solid {st['border']}; padding: 20px; border-radius: 4px; margin-bottom: 30px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
-            <div style="font-size: 0.9rem; color: {st['text']}; font-weight: bold; margin-bottom: 5px;">現在の日本経済フェーズ</div>
-            <h2 style="margin: 0 0 10px 0; color: {st['text']}; font-size: 1.6rem;">{diagnosis['name']}</h2>
-            <p style="margin: 0; font-size: 1.05rem; line-height: 1.6;">{diagnosis['desc']}</p>
+            <div style="font-size: 0.85rem; color: {st['text']}; font-weight: bold; margin-bottom: 5px;">現在の日本経済フェーズ</div>
+            <h3 style="margin: 0 0 10px 0; color: {st['text']}; font-size: 1.4rem;">{diagnosis['name']}</h3>
+            <p style="margin: 0; font-size: 1.0rem; line-height: 1.6;">{diagnosis['desc']}</p>
         </div>
 
-        <h3 style="font-size: 1.1rem; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px;">主要指標のトレンド (対365日前比)</h3>
+        <h4 style="font-size: 1.0rem; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px; color: #555;">主要指標のトレンド (対365日前比)</h4>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; margin-bottom: 30px;">
     """
 
     icons = {"UP": "📈", "FLAT": "➡️", "DOWN": "📉"}
+    
+    # 表示順序
+    display_keys = ["Copper", "JGB_ETF", "Oil", "Nasdaq", "USDJPY", "US_Rate"]
     
     for key in display_keys:
         trend = trends[key]
@@ -242,9 +248,8 @@ def generate_html(raw_df, trends, ratios, current_data, diagnosis):
         icon = icons[trend]
         
         # 数値フォーマット
-        raw_val = current_data[TICKERS.get(key, 'Cost_Index')] if key != 'Cost_Index' else current_data['Cost_Index']
+        raw_val = current_data[TICKERS[key]]
         fmt_val = f"{raw_val:,.0f}" if key == "JGB_ETF" else f"{raw_val:,.2f}"
-        if key == "Cost_Index": fmt_val = "-" # 指数は生値を出さない
 
         # トレンド色
         t_color = "#333"
@@ -268,28 +273,28 @@ def generate_html(raw_df, trends, ratios, current_data, diagnosis):
             <div style="padding: 0 20px 20px 20px; font-size: 0.9rem; line-height: 1.7; border-top: 1px solid #eee;">
                 <p>現在値と365日前を比較し、以下の優先順位で自動判定しています。</p>
                 
-                <h4 style="margin: 15px 0 5px 0; color: #d32f2f;">Priority 1: クライシス・危険</h4>
+                <h5 style="margin: 15px 0 5px 0; color: #d32f2f; font-size: 0.95rem;">Priority 1: クライシス・危険</h5>
                 <ul style="margin: 0; padding-left: 20px;">
                     <li><strong>日本売り:</strong> 国債下落 ＋ 円安</li>
-                    <li><strong>スタグフレーション:</strong> 銅(需要)下落 ＋ 輸入コスト増</li>
+                    <li><strong>スタグフレーション:</strong> 銅(需要)下落 ＋ 輸入コスト(原油/IT)増</li>
                 </ul>
 
-                <h4 style="margin: 15px 0 5px 0; color: #f57f17;">Priority 2: 構造的課題・警戒</h4>
+                <h5 style="margin: 15px 0 5px 0; color: #f57f17; font-size: 0.95rem;">Priority 2: 構造的課題・警戒</h5>
                 <ul style="margin: 0; padding-left: 20px;">
-                    <li><strong>デジタル赤字貧乏:</strong> 輸出横ばい ＋ ITコスト増 ＋ 円安</li>
+                    <li><strong>デジタル赤字貧乏:</strong> 輸出横ばい ＋ ナスダック高 ＋ 円安</li>
                     <li><strong>利益なき繁忙:</strong> 輸出増 ＋ コスト増 ＋ 円安</li>
-                    <li><strong>米独り勝ち:</strong> 米金利高 ＋ コスト増 ＋ 円安</li>
+                    <li><strong>米独り勝ち:</strong> 米金利高 ＋ ナスダック高 ＋ 円安</li>
                 </ul>
 
-                <h4 style="margin: 15px 0 5px 0; color: #2e7d32;">Priority 3: 健全な成長</h4>
+                <h5 style="margin: 15px 0 5px 0; color: #2e7d32; font-size: 0.95rem;">Priority 3: 健全な成長</h5>
                 <ul style="margin: 0; padding-left: 20px;">
-                    <li><strong>黄金期:</strong> 銅上昇 ＋ コスト安定</li>
+                    <li><strong>黄金期:</strong> 銅上昇 ＋ コスト(原油/IT)安定</li>
                     <li><strong>昭和型ブーム:</strong> 銅上昇 ＋ 円安 (輸出ボーナス)</li>
                 </ul>
             </div>
         </details>
 
-        <h3 style="font-size: 1.1rem; border-bottom: 2px solid #eee; padding-bottom: 10px;">過去365日の相対パフォーマンス (起点=100)</h3>
+        <h4 style="font-size: 1.0rem; border-bottom: 2px solid #eee; padding-bottom: 10px; color: #555;">過去365日の相対パフォーマンス (起点=100)</h4>
         <p style="font-size: 0.75rem; color: #888; margin-bottom: 10px;">※ 凡例クリックで表示切替可能です</p>
         
         <div style="position: relative; width: 100%; height: 450px; border: 1px solid #eee; border-radius: 4px; padding: 10px; background: #fff;">
