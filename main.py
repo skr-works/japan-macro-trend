@@ -9,12 +9,12 @@ import jpholiday
 
 # --- 定数設定 ---
 TICKERS = {
-    "Copper": "HG=F",      # [稼ぎ] 銅
-    "JGB_ETF": "1475.T",   # [信用] 日本国債
-    "Oil": "BZ=F",         # [製造業コスト] 原油
-    "Nasdaq": "QQQ",       # [ITコスト] ナスダックETF
-    "USDJPY": "JPY=X",     # [換算] ドル円
-    "US_Rate": "^TNX"      # [圧力] 米金利
+    "Copper": "HG=F",       # [稼ぎ] 銅
+    "JGB_ETF": "1475.T",    # [信用] 日本国債
+    "Oil": "BZ=F",          # [製造業コスト] 原油
+    "Nasdaq": "QQQ",        # [ITコスト] ナスダックETF
+    "USDJPY": "JPY=X",      # [換算] ドル円
+    "US_Rate": "^TNX"       # [圧力] 米金利
 }
 
 # 表示用ラベル
@@ -67,8 +67,8 @@ def get_market_data():
     if isinstance(raw_df.columns, pd.MultiIndex):
         raw_df.columns = raw_df.columns.droplevel(1)
     
-    # 欠損値補完 (Fill Forward)
-    raw_df = raw_df.fillna(method='ffill')
+    # 欠損値補完 (修正箇所1: Fill Forward)
+    raw_df = raw_df.ffill()
 
     # 【重要】全ての列がNaNの行（休日やデータ取得直後の空行）を削除
     raw_df = raw_df.dropna(how='all')
@@ -201,7 +201,8 @@ def generate_html(raw_df, trends, ratios, current_data, diagnosis):
     for key in display_keys:
         col_key = TICKERS[key]
         if col_key in normalized_df:
-            series = normalized_df[col_key].fillna(method='ffill')
+            # 修正箇所2: .ffill()に変更
+            series = normalized_df[col_key].ffill()
             plot_data[LABELS[key]] = series.tolist()
 
     chart_labels = normalized_df.index.strftime('%Y/%m/%d').tolist()
